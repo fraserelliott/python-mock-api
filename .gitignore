@@ -1,3 +1,5 @@
 activate-venv.sh
 mock-data/
 venv/
+__pycache__/
+ssl/

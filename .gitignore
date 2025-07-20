@@ -3,3 +3,4 @@ mock-data/
 venv/
 __pycache__/
 ssl/
+.DS_Store

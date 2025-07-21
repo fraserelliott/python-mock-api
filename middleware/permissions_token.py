@@ -1,6 +1,21 @@
 from fastapi.responses import JSONResponse
 
 async def run(request, config, metadata):
+    """
+    Middleware function to simulate validating authorization token against accepted roles and tokens.
+
+    Args:
+        request (Request): The incoming FastAPI request object.
+        config (dict): Configuration with expected key:
+            - "accepted_tokens" (dict): Maps roles to their valid tokens.
+        metadata (dict): Metadata must include:
+            - "accepted_roles" (list[str]): Roles allowed to access the route.
+
+    Returns:
+        JSONResponse or None: Returns HTTP 401 if missing or unauthorized token,
+        HTTP 500 if configuration or metadata is missing,
+        otherwise None if the token matches an accepted role.
+    """
     if "accepted_tokens" not in config:
         return JSONResponse(
             status_code=500,

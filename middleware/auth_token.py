@@ -1,6 +1,22 @@
 from fastapi.responses import JSONResponse
 
 async def run(request, config, metadata):
+    """
+    Middleware function to simulate validating presence and correctness of an authorization token.
+
+    Args:
+        request (Request): The incoming FastAPI request object.
+        config (dict): Configuration with expected keys:
+            - "accepted_token" (str): The valid token string to compare against.
+            - "flag_driven" (bool): Enables simulation of failure if `fail_next` is True.
+            - "fail_next" (bool): If True, forces a simulated failure once.
+        metadata (dict): Additional route-specific metadata (unused here).
+
+    Returns:
+        JSONResponse or None: Returns HTTP 401 if no or invalid Authorization header,
+        HTTP 403 if simulated failure triggered, HTTP 500 if misconfigured,
+        otherwise None to continue processing.
+    """
     if "accepted_token" not in config:
         return JSONResponse(
             status_code=500,

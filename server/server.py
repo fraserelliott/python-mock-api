@@ -11,36 +11,36 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field, field_validator, ValidationError
 import os
 
+
 class RouteConfig(BaseModel):
     endpoint: str
     data_set: str
     method: Literal["GET", "POST", "PUT", "DELETE"]
     middleware: Optional[list[str]] = None
-    metadata: Optional[str] = None
-    
-    #todo: field_validator for data_set
-    
+    metadata: Optional[dict] = None
+
     @field_validator("method", mode="before")
     @classmethod
-    def normalise_method(cls, v:str) -> str:
+    def normalise_method(cls, v: str) -> str:
         """Normalize HTTP method to uppercase and validate."""
         v_upper = v.upper()
         if v_upper not in {"GET", "POST", "PUT", "DELETE"}:
             raise ValueError(f"Unsupported method: {v}")
         return v_upper
-    
+
     @field_validator("middleware")
     @classmethod
-    def validate_middleware(cls, v:Optional[list[str]]) -> Optional[list[str]]:
+    def validate_middleware(cls, v: Optional[list[str]]) -> Optional[list[str]]:
         """Validate that each middleware file exists."""
         if v is None:
             return v
-        for middleware in v: #todo: change to checking middleware_config
+        for middleware in v:
             file_path = os.path.join(os.getcwd(), "middleware", middleware)
             if not os.path.isfile(file_path):
-                raise ValueError(f"Invalid middleware: {middleware} does not exist at {file_path}")
-            #todo: get required metadata from middleware to validate
+                raise ValueError(
+                    f"Invalid middleware: {middleware} does not exist at {file_path}")
         return v
+
 
 class JsonServer:
     """
@@ -51,7 +51,9 @@ class JsonServer:
         app (FastAPI): The FastAPI application instance to which routes will be added.
         data (dict): In-memory storage for datasets managed by the server.
         middleware_config (dict): Configuration dictionary for middleware behavior and tokens.
+        middleware (dict): Dictionary of middleware loaded during config parsing
     """
+
     def __init__(self, app: FastAPI):
         """
         Initializes the JsonServer with a FastAPI app instance.
@@ -61,27 +63,10 @@ class JsonServer:
         """
         self.app = app
         self.data = dict()
-        self.middleware_config = {
-            "auth_token": {
-                "accepted_token": "validtoken123",
-                "flag_driven": True,
-                "fail_next": False
-            },
-            "input_check": {
-                "flag_driven": True,
-                "fail_next": False
-            },
-            "permissions_token": {
-                "accepted_tokens": {
-                    "admin": "admintoken123",
-                    "user": "usertoken123"
-                },
-                "flag_driven": True,
-                "fail_next": False
-            }
-        }
+        self.middleware_config = dict()
+        self.middleware = dict()
 
-    def add_get_route(self, endpoint: str, data_set: str, middleware:list[str] = None, metadata: dict = None):
+    def add_get_route(self, endpoint: str, data_set: str, middleware: list[str] = None, metadata: dict = None):
         """
         Adds a GET route to the FastAPI app that serves filtered data from the specified dataset.
 
@@ -113,14 +98,15 @@ class JsonServer:
                     return response
             path_params = request.path_params
             query_params = request.query_params
-            filtered = collection_utils.filter_dict(self.data[data_set], {**path_params, **query_params})
+            filtered = collection_utils.filter_dict(
+                self.data[data_set], {**path_params, **query_params})
             if not filtered:
                 return JSONResponse(
                     status_code=404,
                     content={"error": "Item not found"}
-                )  
+                )
             if metadata.get("singular_response"):
-                if len(filtered)==1:
+                if len(filtered) == 1:
                     return JSONResponse(
                         status_code=200,
                         content=filtered[0]
@@ -128,15 +114,16 @@ class JsonServer:
                 else:
                     return JSONResponse(
                         status_code=400,
-                        content={"error": f"{len(filtered)} entries found, this endpoint expects a single entry to be found."}
-                    )    
+                        content={
+                            "error": f"{len(filtered)} entries found, this endpoint expects a single entry to be found."}
+                    )
             return JSONResponse(
                 status_code=200,
                 content={"data": filtered}
             )
         self.app.get(endpoint)(handler)
 
-    def add_post_route(self, endpoint:str, data_set: str, middleware:list[str] = None, metadata: dict = None):
+    def add_post_route(self, endpoint: str, data_set: str, middleware: list[str] = None, metadata: dict = None):
         """
         Adds a POST route to the FastAPI app for creating new entries in the specified dataset.
 
@@ -167,6 +154,16 @@ class JsonServer:
                 if response:
                     return response
             body = await request.json()
+            # Validation against dataset shape
+            template = self.data[data_set][0] if self.data[data_set] else {}
+            missing_fields = [k for k in template.keys() if k != 'id' and k not in body]
+
+            if missing_fields:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": f"Missing required fields: {missing_fields}"}
+                )
             if metadata.get("creates_uuid"):
                 body["uuid"] = str(uuid.uuid4())
             if metadata.get("creates_created_at"):
@@ -178,15 +175,15 @@ class JsonServer:
                 return JSONResponse(
                     status_code=200,
                     content=body
-                    )
+                )
             else:
                 return JSONResponse(
                     status_code=200,
-                    content={"message": "Successful post, no entries created" }
+                    content={"message": "Successful post, no entries created"}
                 )
         self.app.post(endpoint)(handler)
-    
-    def add_delete_route(self, endpoint:str, data_set: str, middleware:list[str] = None, metadata: dict = None):
+
+    def add_delete_route(self, endpoint: str, data_set: str, middleware: list[str] = None, metadata: dict = None):
         """
         Adds a DELETE route to remove entries from the specified dataset.
 
@@ -222,30 +219,37 @@ class JsonServer:
             if not path_params and not query_params:
                 return JSONResponse(
                     status_code=500,
-                    content={"error": "DELETE route requires path or query parameters to locate entry"}
+                    content={
+                        "error": "DELETE route requires path or query parameters to locate entry"}
                 )
-            to_delete = collection_utils.filter_dict(self.data[data_set], {**path_params, **query_params})
+            to_delete = collection_utils.filter_dict(
+                self.data[data_set], {**path_params, **query_params})
             if not to_delete:
                 return JSONResponse(
                     status_code=404,
                     content={"error": "No matching entries found to delete"}
                 )
-            if metadata.get("singular_response") and len(to_delete)!=1:
+            if metadata.get("singular_response") and len(to_delete) != 1:
                 return JSONResponse(
                     status_code=400,
-                    content={"error": f"{len(to_delete)} entries found, this endpoint expects a single entry to be found."}
+                    content={
+                        "error": f"{len(to_delete)} entries found, this endpoint expects a single entry to be found."}
                 )
             # Actually remove matching items
+            to_delete_ids = {item['id'] for item in to_delete}
+
             self.data[data_set] = [
-                item for item in self.data[data_set] if item not in to_delete
+                item for item in self.data[data_set] if item.get('id') not in to_delete_ids
             ]
+
             return JSONResponse(
                 status_code=200,
-                content=to_delete[0] if metadata.get("singular_response") else to_delete
+                content=to_delete[0] if metadata.get(
+                    "singular_response") else to_delete
             )
         self.app.delete(endpoint)(handler)
-        
-    def add_put_route(self, endpoint:str, data_set: str, middleware:list[str] = None, metadata: dict = None):
+
+    def add_put_route(self, endpoint: str, data_set: str, middleware: list[str] = None, metadata: dict = None):
         """
         Adds a PUT route to update an existing entry in the specified dataset.
 
@@ -287,44 +291,64 @@ class JsonServer:
             if not path_params and not query_params:
                 return JSONResponse(
                     status_code=400,
-                    content={"error": "PUT route requires path or query parameters to locate entry"}
+                    content={
+                        "error": "PUT route requires path or query parameters to locate entry"}
                 )
-            to_update = collection_utils.filter_dict(self.data[data_set], {**path_params, **query_params})
+            to_update = collection_utils.filter_dict(
+                self.data[data_set], {**path_params, **query_params})
             if not to_update:
                 return JSONResponse(
                     status_code=404,
                     content={"error": "No matching entry found to update"}
                 )
-            if len(to_update)!=1:
+            if len(to_update) != 1:
                 return JSONResponse(
                     status_code=400,
-                    content={"error": f"{len(to_update)} entries found, this endpoint expects a single entry to be found."}
+                    content={
+                        "error": f"{len(to_update)} entries found, this endpoint expects a single entry to be found."}
                 )
-            # Actually update matching item
-            to_update[0].clear()
-            to_update[0].update(body)
+            # Check shape of body matches the object stored (all keys except 'id')
+            to_update_item = to_update[0]
+            expected_fields = set(to_update_item.keys()) - {"id"}
+            provided_fields = set(body.keys())
+            missing_fields = expected_fields - provided_fields
+            if missing_fields:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": f"Missing fields in request body: {', '.join(missing_fields)}"
+                    }
+                )
+            # Actually update existing item
+            existing_id = to_update_item.get("id")
+            to_update_item.clear()
+            to_update_item.update(body)
+            to_update_item["id"] = existing_id
             return JSONResponse(
                 status_code=200,
-                content=to_update[0]
+                content=to_update_item
             )
         self.app.put(endpoint)(handler)
-        
+
     async def run_middleware(self, name: str, request: Request, metadata: dict):
         """
         Executes the specified middleware module on the given request.
 
         Args:
-            name (str): The name of the middleware module to run (expected in middleware package).
+            name (str): The name of the middleware module to run from self.middleware.
             request (Request): The FastAPI request object.
             metadata (dict): Additional route behavior metadata.
 
         Returns:
             Response or None: Middleware response if it blocks the request, or None to continue.
         """
-        mod = importlib.import_module(f"middleware.{name}")
-        response = await mod.run(request, self.middleware_config[name], metadata)
+        mod = self.middleware.get(name)
+        if not mod:
+            raise Exception(f"Middleware not found for {name}")
+        config = self.middleware_config.get(name, {})
+        response = await mod.run(request, config, metadata)
         return response
-    
+
     def parse_config(self):
         """
         Loads and validates the route configuration from 'config.json'.
@@ -346,59 +370,106 @@ class JsonServer:
         except json.JSONDecodeError as e:
             print(f"Malformed config.json: {e}")
             sys.exit(1)
-        # verify correct structure      
-        if not isinstance(raw_config, list):
-            print("Config must be a list of route definitions.")
+        # verify correct structure
+        if not isinstance(raw_config, dict):
+            print("Config must be a dict with a list of route definitions and a dict for middleware configuration.")
             sys.exit(1)
         try:
-            routes = [RouteConfig(**route) for route in raw_config]
+            self.middleware_config = raw_config.get("middleware", {})
+            errors = self.load_middleware()
+            if errors:
+                print(f"Invalid middleware config: {errors}")
+                sys.exit(1)
+            route_config = raw_config.get("routes", [])
+            routes = [RouteConfig(**route) for route in route_config]
             for route in routes:
                 routefuncs = {
                     "GET": self.add_get_route,
                     "POST": self.add_post_route,
                     "PUT": self.add_put_route,
                     "DELETE": self.add_delete_route}
-                routefuncs[route.method](route.endpoint, route.data_set, route.middleware, route.metadata)
+                routefuncs[route.method](
+                    route.endpoint, route.data_set, route.middleware, route.metadata)
                 self.ensure_dataset_loaded(route.data_set)
         except ValidationError as e:
             print(f"Config validation error:\n{e}")
-      
-    def load_seed_data(self, filepath: str):
-      try:
-          with open(filepath, "r") as f:
-              seed_data = json.load(f)
-          if not isinstance(seed_data, list):
-              raise ValueError(f"Seed file {filepath} does not contain a list")
-          print(f"Loaded seed data from {filepath}")
-          return seed_data
-      except Exception as e:
-          print(f"Failed to load seed data from {filepath}: {e}")
-          return []
-        
-    
-    def ensure_dataset_loaded(self, data_set: str):
-      if data_set not in self.data:
-          self.data[data_set] = self.load_seed_data(f"{data_set}.json")
-          
-    def reset_datasets(self):
-      """
-      Reloads all previously loaded datasets from their corresponding JSON files,
-      effectively resetting them to their original seed state.
-      """
-      loaded_keys = list(self.data.keys())
-      self.data.clear()
-      for key in loaded_keys:
-          self.ensure_dataset_loaded(key)
-      print(f"Reset datasets: {loaded_keys}")
 
-app = FastAPI()
-server = JsonServer(app)
+    def load_seed_data(self, filepath: str):
+        try:
+            with open(filepath, "r") as f:
+                seed_data = json.load(f)
+            if not isinstance(seed_data, list):
+                raise ValueError(
+                    f"Seed file {filepath} does not contain a list")
+            print(f"Loaded seed data from {filepath}")
+            return seed_data
+        except Exception as e:
+            print(f"Failed to load seed data from {filepath}: {e}")
+            return []
+
+    def load_middleware(self):
+        errors = {}
+        for key, conf in self.middleware_config.items():
+            if key not in self.middleware:
+                try:
+                    self.middleware[key] = importlib.import_module(key)
+                except ModuleNotFoundError:
+                    errors[key] = [f"Module '{key}.py' not found."]
+                    continue
+                try:
+                    validation_errors = self.middleware[key].validate_config(
+                        conf)
+                    if validation_errors:  # If not None, it’s a list of errors
+                        errors[key] = validation_errors
+                except AttributeError:
+                    errors[key] = [
+                        f"'validate_config' function not found in '{key}.py'."]
+                except Exception as e:
+                    errors[key] = [f"Error validating {key}: {str(e)}"]
+
+    def ensure_dataset_loaded(self, data_set: str):
+        if data_set not in self.data:
+            data = self.load_seed_data(f"{data_set}.json")
+
+            if not isinstance(data, list):
+                raise ValueError(f"Dataset {data_set} must be a list")
+
+            ids = set()
+            for idx, item in enumerate(data):
+                if not isinstance(item, dict):
+                    raise ValueError(
+                        f"Item at index {idx} in dataset {data_set} is not an object")
+                unique_id = item.get("id")
+                if not unique_id:
+                    raise ValueError(
+                        f"Item at index {idx} in dataset {data_set} lacks 'id'")
+                if unique_id in ids:
+                    raise ValueError(
+                        f"Duplicate id '{unique_id}' found in dataset {data_set}")
+                ids.add(unique_id)
+
+            self.data[data_set] = data
+
+    def reset_datasets(self):
+        """
+        Reloads all previously loaded datasets from their corresponding JSON files,
+        effectively resetting them to their original seed state.
+        """
+        loaded_keys = list(self.data.keys())
+        self.data.clear()
+        for key in loaded_keys:
+            self.ensure_dataset_loaded(key)
+        print(f"Reset datasets: {loaded_keys}")
+
 
 if __name__ == "__main__":
+    app = FastAPI()
+    server = JsonServer(app)
+    server.parse_config()
     uvicorn.run(
         "server:app",             # refers to `app` in `server.py`
         host="127.0.0.1",
         port=8000,
         ssl_keyfile="./ssl/key.pem",  # SSL private key
-        ssl_certfile="./ssl/cert.pem" # SSL certificate
+        ssl_certfile="./ssl/cert.pem"  # SSL certificate
     )

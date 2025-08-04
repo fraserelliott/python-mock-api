@@ -2,9 +2,6 @@ from fastapi.responses import JSONResponse
 from fastapi import Request
 from typing import Optional
 
-#todo: config validation for flag_driven
-#todo: change fail_next to metadata
-
 async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONResponse]:
     """
     Middleware function to simulate input validation checks.

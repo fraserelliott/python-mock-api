@@ -3,9 +3,6 @@ from fastapi import Request
 from typing import Optional, List, Dict
 from pydantic import BaseModel, ValidationError
 
-#todo: config validation for flag_driven
-#todo: change fail_next to metadata
-
 class PermissionsTokenMetadata(BaseModel):
     accepted_roles: List[str]
     

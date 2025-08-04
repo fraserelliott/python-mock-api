@@ -3,9 +3,7 @@ from fastapi import Request
 from typing import Optional, List
 from pydantic import BaseModel, ValidationError
 
-#todo: config validation for flag_driven
-
-class PermissionsTokenConfig(BaseModel):
+class AuthTokenConfig(BaseModel):
     accepted_tokens: List[str]
     flag_driven: Optional[bool]
 
@@ -50,6 +48,24 @@ async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONRe
             content={"error": "Unauthorized"}
         )
     return None
+  
+def validate_config(config: dict) -> Optional[list]:
+    """
+    Validates the middleware-specific configuration against its expected schema.
+    This function is required in all middleware modules to ensure the provided config is correct.
+
+    Args:
+        config (dict): The configuration dictionary provided for the middleware.
+
+    Returns:
+        None if the config is valid, or a list of Pydantic validation errors if invalid.
+        Each error is a dict describing the issue, including the field, message, and type.
+    """
+    try:
+        AuthTokenConfig(**config)
+        return None
+    except ValidationError as e:
+        return e.errors()
 
 def validate_metadata(metadata: dict) -> Optional[dict]:
     """

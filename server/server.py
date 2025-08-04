@@ -1,11 +1,46 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from typing import Optional
+from typing import Optional, Literal
 import uvicorn
-import collection_utils
+import utils.collection_utils as collection_utils
 import importlib
 import uuid
+import json
+import sys
 from datetime import datetime, timezone
+from pydantic import BaseModel, Field, field_validator, ValidationError
+import os
+
+class RouteConfig(BaseModel):
+    endpoint: str
+    data_set: str
+    method: Literal["GET", "POST", "PUT", "DELETE"]
+    middleware: Optional[list[str]] = None
+    metadata: Optional[str] = None
+    
+    #todo: field_validator for data_set
+    
+    @field_validator("method", mode="before")
+    @classmethod
+    def normalise_method(cls, v:str) -> str:
+        """Normalize HTTP method to uppercase and validate."""
+        v_upper = v.upper()
+        if v_upper not in {"GET", "POST", "PUT", "DELETE"}:
+            raise ValueError(f"Unsupported method: {v}")
+        return v_upper
+    
+    @field_validator("middleware")
+    @classmethod
+    def validate_middleware(cls, v:Optional[list[str]]) -> Optional[list[str]]:
+        """Validate that each middleware file exists."""
+        if v is None:
+            return v
+        for middleware in v: #todo: change to checking middleware_config
+            file_path = os.path.join(os.getcwd(), "middleware", middleware)
+            if not os.path.isfile(file_path):
+                raise ValueError(f"Invalid middleware: {middleware} does not exist at {file_path}")
+            #todo: get required metadata from middleware to validate
+        return v
 
 class JsonServer:
     """
@@ -46,7 +81,7 @@ class JsonServer:
             }
         }
 
-    def add_get_route(self, endpoint: str, data_set: str, middleware: list[str], metadata: dict = None):
+    def add_get_route(self, endpoint: str, data_set: str, middleware:list[str] = None, metadata: dict = None):
         """
         Adds a GET route to the FastAPI app that serves filtered data from the specified dataset.
 
@@ -66,6 +101,7 @@ class JsonServer:
         """
         async def handler(request: Request):
             metadata = metadata or {}
+            middleware = middleware or []
             if data_set not in self.data:
                 return JSONResponse(
                     status_code=500,
@@ -100,7 +136,7 @@ class JsonServer:
             )
         self.app.get(endpoint)(handler)
 
-    def add_post_route(self, endpoint:str, data_set: str, middleware:list[str], metadata: dict = None):
+    def add_post_route(self, endpoint:str, data_set: str, middleware:list[str] = None, metadata: dict = None):
         """
         Adds a POST route to the FastAPI app for creating new entries in the specified dataset.
 
@@ -120,6 +156,7 @@ class JsonServer:
         """
         async def handler(request: Request):
             metadata = metadata or {}
+            middleware = middleware or []
             if data_set not in self.data:
                 return JSONResponse(
                     status_code=500,
@@ -149,7 +186,7 @@ class JsonServer:
                 )
         self.app.post(endpoint)(handler)
     
-    def add_delete_route(self, endpoint:str, data_set: str, middleware:list[str], metadata: dict = None):
+    def add_delete_route(self, endpoint:str, data_set: str, middleware:list[str] = None, metadata: dict = None):
         """
         Adds a DELETE route to remove entries from the specified dataset.
 
@@ -170,6 +207,7 @@ class JsonServer:
         """
         async def handler(request: Request):
             metadata = metadata or {}
+            middleware = middleware or []
             if data_set not in self.data:
                 return JSONResponse(
                     status_code=500,
@@ -207,7 +245,7 @@ class JsonServer:
             )
         self.app.delete(endpoint)(handler)
         
-    def add_put_route(self, endpoint:str, data_set: str, middleware:list[str], metadata: dict = None):
+    def add_put_route(self, endpoint:str, data_set: str, middleware:list[str] = None, metadata: dict = None):
         """
         Adds a PUT route to update an existing entry in the specified dataset.
 
@@ -228,6 +266,7 @@ class JsonServer:
         """
         async def handler(request: Request):
             metadata = metadata or {}
+            middleware = middleware or []
             if data_set not in self.data:
                 return JSONResponse(
                     status_code=500,
@@ -285,10 +324,75 @@ class JsonServer:
         mod = importlib.import_module(f"middleware.{name}")
         response = await mod.run(request, self.middleware_config[name], metadata)
         return response
+    
+    def parse_config(self):
+        """
+        Loads and validates the route configuration from 'config.json'.
+
+        This method reads a JSON config file, ensures it is a list of route definitions,
+        validates each route using the RouteConfig Pydantic model, and registers each
+        valid route with the appropriate HTTP method handler (GET, POST, PUT, DELETE).
+
+        If the configuration file is malformed, missing required fields, or contains
+        invalid data, the server will print an error message and exit with code 1.
+
+        Raises:
+            SystemExit: If the config file is not a list, is invalid JSON, or contains
+                        route definitions that fail validation.
+        """
+        try:
+            with open("config.json", "r") as file:
+                raw_config = json.load(file)
+        except json.JSONDecodeError as e:
+            print(f"Malformed config.json: {e}")
+            sys.exit(1)
+        # verify correct structure      
+        if not isinstance(raw_config, list):
+            print("Config must be a list of route definitions.")
+            sys.exit(1)
+        try:
+            routes = [RouteConfig(**route) for route in raw_config]
+            for route in routes:
+                routefuncs = {
+                    "GET": self.add_get_route,
+                    "POST": self.add_post_route,
+                    "PUT": self.add_put_route,
+                    "DELETE": self.add_delete_route}
+                routefuncs[route.method](route.endpoint, route.data_set, route.middleware, route.metadata)
+                self.ensure_dataset_loaded(route.data_set)
+        except ValidationError as e:
+            print(f"Config validation error:\n{e}")
+      
+    def load_seed_data(self, filepath: str):
+      try:
+          with open(filepath, "r") as f:
+              seed_data = json.load(f)
+          if not isinstance(seed_data, list):
+              raise ValueError(f"Seed file {filepath} does not contain a list")
+          print(f"Loaded seed data from {filepath}")
+          return seed_data
+      except Exception as e:
+          print(f"Failed to load seed data from {filepath}: {e}")
+          return []
+        
+    
+    def ensure_dataset_loaded(self, data_set: str):
+      if data_set not in self.data:
+          self.data[data_set] = self.load_seed_data(f"{data_set}.json")
+          
+    def reset_datasets(self):
+      """
+      Reloads all previously loaded datasets from their corresponding JSON files,
+      effectively resetting them to their original seed state.
+      """
+      loaded_keys = list(self.data.keys())
+      self.data.clear()
+      for key in loaded_keys:
+          self.ensure_dataset_loaded(key)
+      print(f"Reset datasets: {loaded_keys}")
 
 app = FastAPI()
 server = JsonServer(app)
-server.add_get_route("/hello/{id}", [{"id": 4, "message": "Hello World!"}], ["auth_token"], {"singular_response": True})
 
 if __name__ == "__main__":
     uvicorn.run(

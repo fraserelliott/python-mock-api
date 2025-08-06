@@ -165,8 +165,7 @@ class JsonServer:
                     content={
                         "error": f"Missing required fields: {missing_fields}"}
                 )
-            if metadata.get("creates_uuid"):
-                body["uuid"] = str(uuid.uuid4())
+            body["id"] = str(uuid.uuid4())
             if metadata.get("creates_created_at"):
                 body["created_at"] = datetime.now(timezone.utc).isoformat()
             if metadata.get("creates_updated_at"):

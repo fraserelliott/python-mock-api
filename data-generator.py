@@ -1,0 +1,319 @@
+import json
+import os
+from InquirerPy import inquirer
+import uuid
+import random
+from datetime import datetime, timedelta
+from faker import Faker
+
+fake = Faker('en_gb')
+
+
+def generate_street(options: dict) -> str:
+    return fake.street_address()
+
+
+def generate_city(options: dict) -> str:
+    return fake.city()
+
+
+def generate_postcode(options: dict) -> str:
+    return fake.postcode()
+
+
+def generate_company(options: dict) -> str:
+    return fake.company()
+
+
+def generate_url(options: dict) -> str:
+    return fake.url()
+
+
+def generate_password(options: dict) -> str:
+    min_length = options.get("min_length", 8)
+    max_length = options.get("max_length", 16)
+    length = random.randint(min_length, max_length)
+    special_chars = options.get("use_special_chars", True)
+    return fake.password(length=length, special_chars=special_chars)
+
+
+def generate_integer(options: dict) -> int:
+    min = options.get("min", 0)
+    max = options.get("max", 100)
+    return random.randint(min, max)
+
+
+def generate_price(options: dict) -> float:
+    min = options.get("min", 1)
+    max = options.get("max", 1000)
+    price = random.uniform(min, max)
+    return round(price, 2)
+
+
+def generate_uuid(options: dict) -> str:
+    return str(uuid.uuid4())
+
+
+def generate_name(options: dict) -> str:
+    return fake.name()
+
+
+def generate_email(options: dict) -> str:
+    return fake.email()
+
+
+def generate_lorem(options: dict) -> str:
+    length = options.get("char_length", 100)
+    return fake.text(max_nb_chars=length)
+
+
+def generate_phone(options: dict) -> str:
+    char_length = options.get("char_length", 11)
+    prefix = options.get("prefix", "0")
+    remaining_len = char_length - len(prefix)
+    if remaining_len <= 0:
+        return prefix[:char_length]
+    remaining_digits = ''.join(random.choices('0123456789', k=remaining_len))
+    return prefix + remaining_digits
+
+
+def generate_datetime_utc(options: dict) -> str:
+    # Extract start and end components with defaults
+    start_year = options.get("start_year", 2000)
+    start_month = options.get("start_month", 1)
+    start_day = options.get("start_day", 1)
+
+    end_year = options.get("end_year", 2025)
+    end_month = options.get("end_month", 12)
+    end_day = options.get("end_day", 31)
+
+    start_date = datetime(start_year, start_month, start_day)
+    end_date = datetime(end_year, end_month, end_day)
+
+    # Compute total seconds range
+    delta_seconds = int((end_date - start_date).total_seconds())
+    random_seconds = random.randint(0, delta_seconds)
+
+    random_datetime = start_date + timedelta(seconds=random_seconds)
+    # Return ISO 8601 UTC string with 'Z' suffix
+    return random_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def load_schema(data_set_name):
+    schema_file = f"{data_set_name}-config.json"
+    if os.path.exists(schema_file):
+        use_existing = inquirer.confirm(
+            message=f"A config for '{data_set_name}' exists. Regenerate using the same schema?"
+        ).execute()
+        if use_existing:
+            with open(schema_file) as f:
+                return json.load(f)
+    return None
+
+
+def save_schema(data_set_name, schema):
+    with open(f"{data_set_name}-config.json", "w") as f:
+        json.dump(schema, f, indent=2)
+
+
+def save_generated_data(data_set_name, data):
+    with open(f"{data_set_name}.json", "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def ensure_id_field(schema: dict) -> dict:
+    if "id" not in schema:
+        schema = {"id": {"type": "uuid"}, **schema}
+    return schema
+
+
+def generate_dataset_from_schema(schema: dict, count: int) -> list:
+    return [generate_entry(schema, idx) for idx in range(1, count + 1)]
+
+
+GEN_FIELDS = {
+    "street": {
+        "func": generate_street,
+        "options": {},
+        "description": "A realistic street name"
+    },
+    "city": {
+        "func": generate_city,
+        "options": {},
+        "description": "A realistic city name"
+    },
+    "postcode": {
+        "func": generate_postcode,
+        "options": {},
+        "description": "A realistic UK postcode"
+    },
+    "company": {
+        "func": generate_company,
+        "options": {},
+        "description": "A fake company or brand name"
+    },
+    "url": {
+        "func": generate_url,
+        "options": {},
+        "description": "A realistic-looking URL"
+    },
+    "password": {
+        "func": generate_password,
+        "options": {
+            "min_length": {"type": int, "default": 8, "description": "Minimum password length"},
+            "max_length": {"type": int, "default": 16, "description": "Maximum password length"},
+            "use_special_chars": {"type": bool, "default": True, "description": "Include special characters"},
+        },
+        "description": "A random password with optional special characters"
+    },
+    "integer": {
+        "func": generate_integer,
+        "options": {
+            "min": {"type": int, "default": 0, "description": "Minimum integer value"},
+            "max": {"type": int, "default": 100, "description": "Maximum integer value"},
+        },
+        "description": "A random integer within a given range"
+    },
+    "price": {
+        "func": generate_price,
+        "options": {
+            "min": {"type": float, "default": 0.0, "description": "Minimum price"},
+            "max": {"type": float, "default": 1000.0, "description": "Maximum price"},
+            "currency_symbol": {"type": str, "default": "£", "description": "Currency symbol"},
+        },
+        "description": "A price with currency symbol between a range"
+    },
+    "uuid": {
+        "func": generate_uuid,
+        "options": {},
+        "description": "A random UUID (universally unique identifier)"
+    },
+    "name": {
+        "func": generate_name,
+        "options": {},
+        "description": "A realistic full name"
+    },
+    "email": {
+        "func": generate_email,
+        "options": {},
+        "description": "A realistic email address"
+    },
+    "lorem": {
+        "func": generate_lorem,
+        "options": {
+            "char_length": {"type": int, "default": 100, "description": "Max number of characters"},
+        },
+        "description": "Random filler text (Lorem Ipsum)"
+    },
+    "phone": {
+        "func": generate_phone,
+        "options": {
+            "char_length": {"type": int, "default": 11, "description": "Phone number length"},
+            "prefix": {"type": str, "default": "0", "description": "Phone number prefix"},
+        },
+        "description": "A phone number with custom prefix and length"
+    },
+    "date": {
+        "func": generate_datetime_utc,
+        "options": {
+            "start_day": {"type": int, "default": 1, "description": "Start day"},
+            "start_month": {"type": int, "default": 1, "description": "Start month"},
+            "start_year": {"type": int, "default": 2000, "description": "Start year"},
+            "end_day": {"type": int, "default": 31, "description": "End day"},
+            "end_month": {"type": int, "default": 12, "description": "End month"},
+            "end_year": {"type": int, "default": 2025, "description": "End year"},
+        },
+        "description": "A UTC datetime (ISO format) between two dates"
+    },
+}
+
+
+def prompt_field_type() -> str:
+    choices = [
+        {"name": f"{key} — {val['description']}", "value": key}
+        for key, val in GEN_FIELDS.items()
+    ]
+
+    return inquirer.select(
+        message="What kind of data do you want to generate for this field?",
+        choices=choices
+    ).execute()
+
+
+def prompt_options(field_type: str) -> dict:
+    field = GEN_FIELDS.get(field_type, {})
+    options_spec = field.get("options", {})
+    answers = {}
+
+    for key, spec in options_spec.items():
+        default = spec.get("default")
+        desc = spec.get("description", key)
+        value_type = spec.get("type", str)
+
+        answer = inquirer.text(
+            message=f"{desc} [{default}]"
+        ).execute()
+
+        if answer == "":
+            answers[key] = default
+        else:
+            try:
+                answers[key] = value_type(answer)
+            except ValueError:
+                print(f"Invalid input for {key}, using default.")
+                answers[key] = default
+
+    return answers
+
+
+def generate_entry(schema: dict, idx: int) -> dict:
+    entry = {}
+    for field, spec in schema.items():
+        field_type = spec.get("type")
+        gen_func = GEN_FIELDS.get(field_type, {}).get("func")
+        options = {
+            **spec.get("options", {}),
+            "index": idx
+        }
+
+        if gen_func:
+            entry[field] = gen_func(options)
+        else:
+            entry[field] = None
+    return entry
+
+
+def generate_dataset():
+    data_set_name = inquirer.text(message="Enter data set name:").execute()
+    schema = load_schema(data_set_name)
+
+    if not schema:
+        schema = generate_schema()
+        save_schema(data_set_name, schema)
+
+    schema = ensure_id_field(schema)
+
+    num_records = int(inquirer.text(
+        message="How many records to generate?").execute())
+
+    data = generate_dataset_from_schema(schema, num_records)
+
+    save_generated_data(data_set_name, data)
+    print(f"\nSaved {num_records} records to {data_set_name}.json")
+
+
+def generate_schema():
+    schema = {}
+    while True:
+        add_field = inquirer.confirm(message="Add another field?").execute()
+        if not add_field:
+            break
+        name = inquirer.text(message="Enter field name:").execute()
+        field_type = prompt_field_type()
+        options = prompt_options(field_type)
+        schema[name] = {"type": field_type, "options": options}
+    return schema
+
+
+if __name__ == "__main__":
+    generate_dataset()

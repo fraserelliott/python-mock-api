@@ -5,3 +5,4 @@ __pycache__/
 ssl/
 .DS_Store
 config.json
+test-gen/

@@ -4,6 +4,8 @@ from importlib import import_module
 from rich.console import Console
 from rich.tree import Tree
 
+# TODO: route metadata dict
+
 console = Console()
 
 def main():

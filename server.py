@@ -20,23 +20,14 @@ class RouteConfig(BaseModel):
     middleware: Optional[list[str]] = None
     metadata: Optional[dict] = None
 
-    @field_validator("method", mode="before")
-    @classmethod
-    def normalise_method(cls, v: str) -> str:
-        """Normalize HTTP method to uppercase and validate."""
-        v_upper = v.upper()
-        if v_upper not in {"GET", "POST", "PUT", "DELETE"}:
-            raise ValueError(f"Unsupported method: {v}")
-        return v_upper
-
     @field_validator("middleware")
     @classmethod
     def validate_middleware(cls, v: Optional[list[str]]) -> Optional[list[str]]:
-        """Validate that each middleware file exists."""
         if v is None:
             return v
         for middleware in v:
-            file_path = os.path.join(os.getcwd(), "middleware", middleware)
+            # Check if file middleware.py exists
+            file_path = os.path.join(os.getcwd(), "middleware", middleware + ".py")
             if not os.path.isfile(file_path):
                 raise ValueError(
                     f"Invalid middleware: {middleware} does not exist at {file_path}")
@@ -85,9 +76,9 @@ class JsonServer:
             - Returns multiple matching entries otherwise.
             - Returns appropriate error responses if dataset not found, no matches, or multiple matches found for singular.
         """
+        metadata = metadata or {}
+        middleware = middleware or []
         async def handler(request: Request):
-            metadata = metadata or {}
-            middleware = middleware or []
             if data_set not in self.data:
                 return JSONResponse(
                     status_code=500,
@@ -142,9 +133,9 @@ class JsonServer:
             - Adds the new entry to the dataset if 'creates_entry' is True.
             - Returns the created entry or success message accordingly.
         """
+        metadata = metadata or {}
+        middleware = middleware or []
         async def handler(request: Request):
-            metadata = metadata or {}
-            middleware = middleware or []
             if data_set not in self.data:
                 return JSONResponse(
                     status_code=500,
@@ -202,9 +193,9 @@ class JsonServer:
             - Removes matching entries from the dataset.
             - Returns deleted entries or errors accordingly.
         """
+        metadata = metadata or {}
+        middleware = middleware or []
         async def handler(request: Request):
-            metadata = metadata or {}
-            middleware = middleware or []
             if data_set not in self.data:
                 return JSONResponse(
                     status_code=500,
@@ -268,9 +259,9 @@ class JsonServer:
             - Clears and updates the entry with new data.
             - Returns the updated entry or relevant errors.
         """
+        metadata = metadata or {}
+        middleware = middleware or []
         async def handler(request: Request):
-            metadata = metadata or {}
-            middleware = middleware or []
             if data_set not in self.data:
                 return JSONResponse(
                     status_code=500,
@@ -412,7 +403,7 @@ class JsonServer:
         for key, conf in self.middleware_config.items():
             if key not in self.middleware:
                 try:
-                    self.middleware[key] = importlib.import_module(key)
+                    self.middleware[key] = importlib.import_module(f"middleware.{key}")
                 except ModuleNotFoundError:
                     errors[key] = [f"Module '{key}.py' not found."]
                     continue
@@ -461,11 +452,11 @@ class JsonServer:
             self.ensure_dataset_loaded(key)
         print(f"Reset datasets: {loaded_keys}")
 
+app = FastAPI()
+server = JsonServer(app)
+server.parse_config()
 
 if __name__ == "__main__":
-    app = FastAPI()
-    server = JsonServer(app)
-    server.parse_config()
     uvicorn.run(
         "server:app",             # refers to `app` in `server.py`
         host="127.0.0.1",

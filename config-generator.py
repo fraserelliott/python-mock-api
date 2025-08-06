@@ -4,11 +4,50 @@ from importlib import import_module
 from rich.console import Console
 from rich.tree import Tree
 
-# TODO: route metadata dict
+ROUTE_METADATA_OPTIONS = {
+    "get": {
+        "singular_response": {
+            "description": "Only return a single item (400 if multiple)",
+            "type": bool,
+            "mandatory": False
+        }
+    },
+    "post": {
+        "creates_entry": {
+            "description": "Whether to store the posted entry",
+            "type": bool,
+            "mandatory": False
+        },
+        "creates_created_at": {
+            "description": "Auto add `created_at` timestamp",
+            "type": bool,
+            "mandatory": False
+        },
+        "creates_updated_at": {
+            "description": "Auto add `updated_at` (set to None)",
+            "type": bool,
+            "mandatory": False
+        },
+    },
+    "delete": {
+        "singular_response": {
+            "description": "Require exactly one item to delete",
+            "type": bool,
+            "mandatory": False
+        }
+    },
+    "put": {}
+}
 
 console = Console()
 
+
 def main():
+    """
+    Entry point of the application.
+    Loads middleware modules, prompts user for middleware and route configurations,
+    then saves the full configuration to a JSON file and prints it.
+    """
     middleware_files = [
         "auth_token.py",
         "input_check.py",
@@ -21,7 +60,7 @@ def main():
     # Prompt config for each middleware
     for mw_name, mw_info in available_middleware.items():
         print(f"\nConfigure middleware: {mw_name}")
-        config = prompt_middleware_config(
+        config = prompt_required_config(
             mw_info.get("config_requirements", {}))
         mw_info["config"] = config  # save actual config
 
@@ -48,6 +87,16 @@ def main():
 
 
 def load_middleware_modules(middleware_files):
+    """
+    Dynamically imports middleware modules from given filenames.
+    Expects each middleware module to provide `get_config_requirements` and `get_metadata_requirements` functions.
+
+    Args:
+        middleware_files (list[str]): List of middleware Python filenames.
+
+    Returns:
+        dict: Mapping of middleware module names to their config and metadata requirements.
+    """
     available_middleware = {}
     for filename in middleware_files:
         # Assuming middleware files are Python modules named like 'auth_token.py'
@@ -64,6 +113,13 @@ def load_middleware_modules(middleware_files):
 
 
 def display_routes_tree(routes):
+    """
+    Displays a hierarchical tree of the configured routes, including their HTTP methods,
+    endpoints, data sets, and any associated middleware and metadata.
+
+    Args:
+        routes (list[dict]): List of configured route dictionaries.
+    """
     tree = Tree("Routes Configuration")
 
     if not routes:
@@ -85,7 +141,31 @@ def display_routes_tree(routes):
     console.print(tree)
 
 
+def get_metadata_schema_for_route(method: str) -> dict:
+    """
+    Retrieves the metadata schema dictionary for a given HTTP method,
+    based on predefined route metadata options.
+
+    Args:
+        method (str): HTTP method (e.g., 'GET', 'POST').
+
+    Returns:
+        dict: Metadata requirements for the specified HTTP method.
+    """
+    return ROUTE_METADATA_OPTIONS.get(method.lower(), {})
+
+
 def prompt_route_config(available_middleware: dict) -> dict:
+    """
+    Prompts the user to configure a single route, including HTTP method, endpoint,
+    data set name, middleware selection, and associated metadata for middleware and route.
+
+    Args:
+        available_middleware (dict): Middleware info including metadata requirements.
+
+    Returns:
+        dict: The fully configured route dictionary.
+    """
     route = {}
 
     route['method'] = inquirer.select(
@@ -102,34 +182,50 @@ def prompt_route_config(available_middleware: dict) -> dict:
     ).execute()
 
     # Middleware multi-select
-    middleware_choices = list(available_middleware.keys()) + ["<none>"]
+    middleware_choices = list(available_middleware.keys())
     selected_middleware = inquirer.checkbox(
         message="Select middleware to apply (space to toggle, enter to continue):",
         choices=middleware_choices,
     ).execute()
 
-    # Remove the placeholder "<none>" if it's selected
-    if "<none>" in selected_middleware:
-        selected_middleware = []
-        
     route['middleware'] = selected_middleware
+    route_md_requirements = get_metadata_schema_for_route(route['method'])
 
-    # Now prompt metadata per middleware
-    metadata = {}
-    for mw_name in selected_middleware:
-        mw_requirements = available_middleware[mw_name].get(
-            'metadata_requirements', {})
-        if mw_requirements:
-            print(f"Configure metadata for middleware '{mw_name}':")
-            mw_metadata = prompt_middleware_config(mw_requirements)
-            metadata[mw_name] = mw_metadata
+    def prompt_metadata():
+        metadata = {}
 
-    route['metadata'] = metadata
+        # Prompt metadata per middleware
+        for mw_name in selected_middleware:
+            mw_requirements = available_middleware[mw_name].get(
+                'metadata_requirements', {})
+            if mw_requirements:
+                print(f"Configure metadata for middleware '{mw_name}':")
+                mw_metadata = prompt_required_config(mw_requirements)
+                metadata.update(mw_metadata)
+
+        # Prompt route-level metadata
+        md_metadata = prompt_required_config(route_md_requirements)
+        metadata.update(md_metadata)
+
+        return metadata
+
+    route['metadata'] = prompt_metadata()
 
     return route
 
 
-def prompt_middleware_config(requirements: dict) -> dict:
+def prompt_required_config(requirements: dict) -> dict:
+    """
+    Generic prompt function for collecting configuration values based on given requirements.
+    Supports types: bool (yes/no), dict (key-value pairs), list (comma-separated), int, float, and str.
+    Validates mandatory fields and casts input to expected types.
+
+    Args:
+        requirements (dict): Mapping of field names to dicts describing description, type, and mandatory flag.
+
+    Returns:
+        dict: User input answers matching the requirements structure.
+    """
     answers = {}
 
     for field, info in requirements.items():

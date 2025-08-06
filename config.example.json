@@ -1,0 +1,27 @@
+{
+  "middleware": {
+    "auth_token": {
+      "accepted_token": "validtoken123",
+      "flag_driven": true
+    },
+    "input_check": {
+      "flag_driven": true
+    },
+    "permissions_token": {
+      "accepted_tokens": {
+        "admin": "admintoken123",
+        "user": "usertoken123"
+      },
+      "flag_driven": true
+    }
+  },
+  "routes": [
+    {
+      "method": "DELETE",
+      "endpoint": "/api/users/:id",
+      "data_set": "users",
+      "middleware": [ "permissions_token" ],
+      "metadata": { "accepted_roles": [ "admin"] }
+    }
+  ]
+}

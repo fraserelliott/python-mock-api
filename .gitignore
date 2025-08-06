@@ -4,3 +4,4 @@ venv/
 __pycache__/
 ssl/
 .DS_Store
+config.json

@@ -3,9 +3,11 @@ from fastapi import Request
 from typing import Optional, List
 from pydantic import BaseModel, ValidationError
 
+
 class AuthTokenConfig(BaseModel):
-    accepted_tokens: List[str]
+    accepted_token: str
     flag_driven: Optional[bool]
+
 
 async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONResponse]:
     """
@@ -27,7 +29,8 @@ async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONRe
     if "accepted_token" not in config:
         return JSONResponse(
             status_code=500,
-            content={"error": "Missing required config key for auth_token middleware: 'accepted_token'"}
+            content={
+                "error": "Missing required config key for auth_token middleware: 'accepted_token'"}
         )
     auth_header = request.headers.get("Authorization")
     if not auth_header:
@@ -48,7 +51,8 @@ async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONRe
             content={"error": "Unauthorized"}
         )
     return None
-  
+
+
 def validate_config(config: dict) -> Optional[list]:
     """
     Validates the middleware-specific configuration against its expected schema.
@@ -67,28 +71,48 @@ def validate_config(config: dict) -> Optional[list]:
     except ValidationError as e:
         return e.errors()
 
+
 def validate_metadata(metadata: dict) -> Optional[dict]:
     """
     Function used in parsing to validate that the required metadata has been provided. This is required to be in all middleware.
-    
+
     Args:
         metadata (dict): Additional route-specific metadata (unused here).
-    
+
     Returns:
         None if metadata provided is sufficient or a dict explaining which metadata is missing or malformed.
     """
     return None
 
-def get_requirements() -> Optional[dict]:
+
+def get_config_requirements() -> dict:
     """
-    Function used in wizards to generate the server config. This is shared among all middleware. This is required to be in all middleware.
-    
+    Function used in wizards to generate the server config. This signature is shared among all middleware and is required by all middleware.
+
     Returns:
-        None if no config options or metadata are required or a dict explaining config options and metadata requirements. e.g.
-        {
-            "config": { "accepted_tokens": "A dict mapping each user role to tokens that the middleware should accept for that role."},
-            "metadata": { "accepted_roles": "A list of roles that should be accepted for the route."}
-        }
+        A dict explaining requirements.
     """
-    return { "config": { "accepted_token": "A single string for the token this middleware should accept as authenticated for all routes.",
-             "flag_driven": "A bool to say whether the server can trigger a fail_next flag for this route to return error 500 on the next request."} }
+    return {
+        "accepted_token":
+            {
+                "description": "A single string for the token this middleware should accept as authenticated for all routes.",
+                "mandatory": True,
+                "type": str
+            },
+            "flag_driven":
+            {
+                "description": "A bool to say whether the server can trigger a fail_next flag for this route to return error 403 on the next request.",
+                "mandatory": False,
+                "type": bool
+            }
+    }
+
+
+def get_metadata_requirements() -> dict:
+    """
+      Function used in wizards to generate the server config. This signature is shared among all middleware and is required by all middleware.
+
+      Returns:
+          A dict explaining requirements.
+    """
+    return {}

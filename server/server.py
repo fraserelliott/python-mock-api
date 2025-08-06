@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field, field_validator, ValidationError
 import os
 
+# TODO: refactor metadata to store per route
 
 class RouteConfig(BaseModel):
     endpoint: str

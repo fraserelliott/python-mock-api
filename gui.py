@@ -72,10 +72,9 @@ def build_gui():
             add_text("Fail next call to:")
             with group(horizontal=True):
                 add_combo(
-                    label="Route Dropdown",
                     tag="route_combo",
                     items=get_route_items(),
-                    width=400
+                    width=500
                 )
                 add_button(label="Confirm Route",
                            callback=fail_route_confirm_callback)
@@ -83,10 +82,9 @@ def build_gui():
             add_text("Fail next call requiring:")
             with group(horizontal=True):
                 add_combo(
-                    label="Middleware Dropdown",
                     tag="middleware_combo",
                     items=get_middleware_items(),
-                    width=400
+                    width=500
                 )
                 add_button(label="Confirm Middleware",
                            callback=fail_middleware_confirm_callback)

@@ -10,7 +10,6 @@ class PermissionsTokenMetadata(BaseModel):
 
 class PermissionsTokenConfig(BaseModel):
     accepted_tokens: Dict[str, str]
-    flag_driven: Optional[bool]
 
 
 async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONResponse]:
@@ -21,7 +20,6 @@ async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONRe
         request (Request): The incoming FastAPI request object.
         config (dict): Configuration with expected key:
             - "accepted_tokens" (dict): Maps roles to their valid tokens.
-             - "flag_driven" (bool): Enables simulation of failure if `fail_next` is True.
         metadata (dict): Metadata must include:
             - "accepted_roles" (list[str]): Roles allowed to access the route.
 
@@ -35,34 +33,33 @@ async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONRe
             status_code=500,
             content={
                 "error": "Missing required config key for permissions_token middleware: 'accepted_tokens'"}
-        )
+        ), False
     if "accepted_roles" not in metadata:
         return JSONResponse(
             status_code=500,
             content={
                 "error": "Missing required metadata key for permissions_token middleware: 'accepted_roles'"}
-        )
-    if config.get("flag_driven") and metadata.get("fail_next"):
-        metadata["fail_next"] = False
+        ), False
+    if metadata.get("fail_next"):
         return JSONResponse(
             status_code=403,
             content={"error": "Simulated auth failure"}
-        )
+        ), True
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         return JSONResponse(
             status_code=401,
             content={"error": "Missing Authorization header"}
-        )
+        ), False
     accepted_tokens = config["accepted_tokens"]
     accepted_roles = metadata["accepted_roles"]
     for role in accepted_roles:
         if role in accepted_tokens and auth_header == f"Bearer {accepted_tokens[role]}":
-            return None  # Provided token matches user permission required
+            return None, False  # Provided token matches user permission required
     return JSONResponse(
         status_code=401,
         content={"error": "Unauthorized"}
-    )
+    ), False
 
 
 def validate_metadata(metadata: dict) -> Optional[dict]:
@@ -116,13 +113,8 @@ def get_config_requirements() -> dict:
                 "mandatory": True,
                 "type": dict
             },
-            "flag_driven":
-            {
-                "description": "A bool to say whether the server can trigger a fail_next flag for this route to return error 403 on the next request.",
-                "mandatory": False,
-                "type": bool
-            }
     }
+
 
 def get_metadata_requirements() -> dict:
     """
@@ -132,10 +124,10 @@ def get_metadata_requirements() -> dict:
           A dict explaining requirements.
     """
     return {
-      "accepted_roles":
-      {
-          "description": " list of roles that should be accepted for the route.",
-          "mandatory": True,
-          "type": list
-      }
+        "accepted_roles":
+        {
+            "description": " list of roles that should be accepted for the route.",
+            "mandatory": True,
+            "type": list
+        }
     }

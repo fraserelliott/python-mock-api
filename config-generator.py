@@ -115,7 +115,7 @@ def load_middleware_modules(middleware_files):
 def display_routes_tree(routes):
     """
     Displays a hierarchical tree of the configured routes, including their HTTP methods,
-    endpoints, data sets, and any associated middleware and metadata.
+    endpoints, data sets, middleware, and route-level metadata separately.
 
     Args:
         routes (list[dict]): List of configured route dictionaries.
@@ -127,16 +127,26 @@ def display_routes_tree(routes):
     else:
         for idx, route in enumerate(routes, start=1):
             route_branch = tree.add(
-                f"[bold]{idx}. {route['method']} {route['endpoint']}[/]")
+                f"[bold]{idx}. {route['method']} {route['endpoint']}[/]"
+            )
             route_branch.add(f"Data set: {route['data_set']}")
+
+            # Middleware branch
             middleware_branch = route_branch.add("Middleware:")
             if not route['middleware']:
                 middleware_branch.add("[italic grey]None[/]")
             else:
                 for mw in route['middleware']:
-                    mw_metadata = route.get('metadata', {}).get(mw, {})
-                    mw_text = f"{mw} - Metadata: {mw_metadata}" if mw_metadata else mw
-                    middleware_branch.add(mw_text)
+                    middleware_branch.add(mw)
+
+            # Metadata branch (route-level only)
+            metadata = route.get('metadata', {})
+            metadata_branch = route_branch.add("Metadata:")
+            if not metadata:
+                metadata_branch.add("[italic grey]None[/]")
+            else:
+                for key, value in metadata.items():
+                    metadata_branch.add(f"{key}: {value}")
 
     console.print(tree)
 
@@ -174,7 +184,7 @@ def prompt_route_config(available_middleware: dict) -> dict:
     ).execute()
 
     route['endpoint'] = inquirer.text(
-        message="Enter endpoint (e.g. /api/users/:id):"
+        message="Enter endpoint (e.g. /api/users/{id}):"
     ).execute()
 
     route['data_set'] = inquirer.text(

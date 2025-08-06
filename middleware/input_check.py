@@ -18,9 +18,8 @@ async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONRe
         otherwise None to continue processing.
     """
     if metadata.get("fail_next"):
-        metadata["fail_next"] = False
-        return JSONResponse(status_code=400, content={"error": "Simulated input validation failure"})
-    return None
+        return JSONResponse(status_code=400, content={"error": "Simulated input validation failure"}), True
+    return None, False
 
 
 def validate_metadata(metadata: dict) -> Optional[dict]:

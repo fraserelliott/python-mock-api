@@ -57,6 +57,8 @@ class JsonServer:
         self.data = dict()
         self.middleware_config = dict()
         self.middleware = dict()
+        self.fail_next = dict()
+        self.routes = set()
 
     def add_get_route(self, endpoint: str, data_set: str, middleware: list[str] = None, metadata: dict = None):
         """
@@ -84,6 +86,9 @@ class JsonServer:
                     status_code=500,
                     content={"error": f"dataset {data_set} not found"}
                 )
+            response = self.check_route_failure_flag("GET", endpoint)
+            if response:
+              return response
             for middleware_name in middleware:
                 response = await self.run_middleware(middleware_name, request, metadata)
                 if response:
@@ -141,11 +146,26 @@ class JsonServer:
                     status_code=500,
                     content={"error": f"dataset {data_set} not found"}
                 )
+            response = self.check_route_failure_flag("POST", endpoint)
+            if response:
+              return response
             for middleware_name in middleware:
                 response = await self.run_middleware(middleware_name, request, metadata)
                 if response:
                     return response
-            body = await request.json()
+            try:
+                body = await request.json()
+            except Exception:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "Invalid JSON body"}
+                )
+
+            if not body:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "Request body is required"}
+                )
             # Validation against dataset shape
             template = self.data[data_set][0] if self.data[data_set] else {}
             missing_fields = [k for k in template.keys() if k != 'id' and k not in body]
@@ -201,6 +221,9 @@ class JsonServer:
                     status_code=500,
                     content={"error": f"dataset {data_set} not found"}
                 )
+            response = self.check_route_failure_flag("DELETE", endpoint)
+            if response:
+              return response
             for middleware_name in middleware:
                 response = await self.run_middleware(middleware_name, request, metadata)
                 if response:
@@ -267,15 +290,25 @@ class JsonServer:
                     status_code=500,
                     content={"error": f"dataset {data_set} not found"}
                 )
+            response = self.check_route_failure_flag("PUT", endpoint)
+            if response:
+              return response
             for middleware_name in middleware:
                 response = await self.run_middleware(middleware_name, request, metadata)
                 if response:
                     return response
-            body = await request.json()
+            try:
+                body = await request.json()
+            except Exception:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "Invalid JSON body"}
+                )
+
             if not body:
                 return JSONResponse(
                     status_code=400,
-                    content={"error": "No body provided"}
+                    content={"error": "Request body is required"}
                 )
             path_params = request.path_params
             query_params = request.query_params
@@ -320,6 +353,14 @@ class JsonServer:
                 content=to_update_item
             )
         self.app.put(endpoint)(handler)
+    
+    
+    def check_route_failure_flag(self, method, endpoint):
+      route_key = f"{method}:{endpoint}"
+      if self.fail_next.get(route_key, False):
+          # Respond with 500 error (simulated failure)
+          self.fail_next[route_key] = False  # reset flag
+          return JSONResponse(status_code=500, content={"error": "Simulated failure"})
 
     async def run_middleware(self, name: str, request: Request, metadata: dict):
         """
@@ -333,11 +374,16 @@ class JsonServer:
         Returns:
             Response or None: Middleware response if it blocks the request, or None to continue.
         """
+        metadata = dict(metadata)
         mod = self.middleware.get(name)
         if not mod:
             raise Exception(f"Middleware not found for {name}")
         config = self.middleware_config.get(name, {})
-        response = await mod.run(request, config, metadata)
+        # Inject fail_next flag into metadata, run middleware and clear flag if failure was simulated
+        metadata["fail_next"] = self.fail_next.get(f"middleware:{name}", False)
+        response, should_clear_flag = await mod.run(request, config, metadata)
+        if should_clear_flag:
+            self.fail_next[f"middleware:{name}"] = False
         return response
 
     def parse_config(self):
@@ -374,6 +420,7 @@ class JsonServer:
             route_config = raw_config.get("routes", [])
             routes = [RouteConfig(**route) for route in route_config]
             for route in routes:
+                self.routes.add(f"{route.method}:{route.endpoint}")
                 routefuncs = {
                     "GET": self.add_get_route,
                     "POST": self.add_post_route,
@@ -461,6 +508,4 @@ if __name__ == "__main__":
         "server:app",             # refers to `app` in `server.py`
         host="127.0.0.1",
         port=8000,
-        ssl_keyfile="./ssl/key.pem",  # SSL private key
-        ssl_certfile="./ssl/cert.pem"  # SSL certificate
     )

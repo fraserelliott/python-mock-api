@@ -6,7 +6,6 @@ from pydantic import BaseModel, ValidationError
 
 class AuthTokenConfig(BaseModel):
     accepted_token: str
-    flag_driven: Optional[bool]
 
 
 async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONResponse]:
@@ -17,13 +16,12 @@ async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONRe
         request (Request): The incoming FastAPI request object.
         config (dict): Configuration with expected keys:
             - "accepted_token" (str): The valid token string to compare against.
-            - "flag_driven" (bool): Enables simulation of failure if `fail_next` is True.
         metadata (dict): Additional route-specific metadata:
-            - "fail_next" (bool): If True, forces a simulated failure once. This should only be set by the server if flag_driven is True.
+            - "fail_next" (bool): If True, forces a simulated failure once.
 
     Returns:
         JSONResponse or None: Returns HTTP 401 if no or invalid Authorization header,
-        HTTP 403 if simulated failure triggered, HTTP 500 if misconfigured,
+        HTTP 401 if simulated failure triggered, HTTP 500 if misconfigured,
         otherwise None to continue processing.
     """
     if "accepted_token" not in config:
@@ -31,26 +29,25 @@ async def run(request: Request, config: dict, metadata: dict) -> Optional[JSONRe
             status_code=500,
             content={
                 "error": "Missing required config key for auth_token middleware: 'accepted_token'"}
-        )
+        ), False
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         return JSONResponse(
             status_code=401,
             content={"error": "Missing Authorization header"}
-        )
+        ), False
     accepted_token = config["accepted_token"]
-    if config.get("flag_driven") and metadata.get("fail_next"):
-        metadata["fail_next"] = False
+    if metadata.get("fail_next"):
         return JSONResponse(
-            status_code=403,
+            status_code=401,
             content={"error": "Simulated auth failure"}
-        )
+        ), True
     if auth_header != f"Bearer {accepted_token}":
         return JSONResponse(
             status_code=401,
             content={"error": "Unauthorized"}
-        )
-    return None
+        ), False
+    return None, False
 
 
 def validate_config(config: dict) -> Optional[list]:
@@ -99,12 +96,6 @@ def get_config_requirements() -> dict:
                 "mandatory": True,
                 "type": str
             },
-            "flag_driven":
-            {
-                "description": "A bool to say whether the server can trigger a fail_next flag for this route to return error 403 on the next request.",
-                "mandatory": False,
-                "type": bool
-            }
     }
 
 

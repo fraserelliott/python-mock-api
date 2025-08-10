@@ -137,21 +137,28 @@ def generate_datetime_utc(options: dict) -> str:
     return random_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def load_schema(data_set_name):
+def load_schema(data_set_name, prompt_usage=False):
     schema_file = f"{data_set_name}-config.json"
     if os.path.exists(schema_file):
-        use_existing = inquirer.confirm(
-            message=f"A config for '{data_set_name}' exists. Regenerate using the same schema?"
-        ).execute()
+        if prompt_usage:
+            use_existing = inquirer.confirm(
+                message=f"A config for '{data_set_name}' exists. Regenerate using the same schema?"
+            ).execute()
+        else:
+            use_existing = True
         if use_existing:
             with open(schema_file) as f:
                 return json.load(f)
     return None
 
 
-def save_schema(data_set_name, schema):
+def save_schema(data_set_name, fields, linked_to=None):
+    full_schema = {}
+    if linked_to:
+        full_schema["linked_to"] = linked_to
+    full_schema["fields"] = fields
     with open(f"{data_set_name}-config.json", "w") as f:
-        json.dump(schema, f, indent=2)
+        json.dump(full_schema, f, indent=2)
 
 
 def save_generated_data(data_set_name, data):
@@ -159,10 +166,10 @@ def save_generated_data(data_set_name, data):
         json.dump(data, f, indent=2)
 
 
-def ensure_id_field(schema: dict) -> dict:
-    if "id" not in schema:
-        schema = {"id": {"type": "uuid"}, **schema}
-    return schema
+def ensure_id_field(fields: dict) -> dict:
+    if "id" not in fields:
+        fields = {"id": {"type": "uuid"}, **fields}
+    return fields
 
 
 def generate_dataset_from_schema(schema: dict, count: int) -> list:
@@ -335,8 +342,9 @@ def prompt_options(field_type: str) -> dict:
 
 
 def generate_entry(schema: dict, idx: int) -> dict:
+    fields = schema.get("fields", {})
     entry = {}
-    for field, spec in schema.items():
+    for field, spec in fields.items():
         field_type = spec.get("type")
         gen_func = GEN_FIELDS.get(field_type, {}).get("func")
         options = {
@@ -352,9 +360,26 @@ def generate_entry(schema: dict, idx: int) -> dict:
 
 
 def generate_linked_dataset():
-    # Ask which dataset to link to
-    linked_dataset_name = inquirer.text(
-        message="Enter the parent dataset name for linking:").execute()
+    # Get the new dataset name
+    new_dataset_name = inquirer.text(
+        message="Enter the new dataset name:").execute()
+    
+    # Load or generate schema for new linked dataset
+    schema = load_schema(new_dataset_name, True)
+    if not schema:
+        fields = generate_fields()
+        
+        # Ask which dataset to link to
+        linked_dataset_name = inquirer.text(
+            message="Enter the parent dataset name for linking:").execute()
+                
+        save_schema(new_dataset_name, fields, linked_dataset_name)
+        # Reload with correct structure
+        schema = load_schema(new_dataset_name)
+        
+    new_data = []
+    linked_dataset_name = schema.get("linked_to")
+    
     linked_dataset_file = f"{linked_dataset_name}.json"
 
     # Load linked dataset records
@@ -365,30 +390,15 @@ def generate_linked_dataset():
     with open(linked_dataset_file) as f:
         linked_records = json.load(f)
 
-    # Set foreign key field name (e.g. post_id)
+    # Set foreign key field name (e.g. posts_id)
     foreign_key_field = f"{linked_dataset_name}_id"
     print(f"Using foreign key field: '{foreign_key_field}'")
-
+    
     # Get how many linked records per linked entry
     min_count = int(inquirer.text(
         message="Minimum number of linked records per parent?").execute())
     max_count = int(inquirer.text(
         message="Maximum number of linked records per parent?").execute())
-
-    # Get the new dataset name
-    new_dataset_name = inquirer.text(
-        message="Enter the new dataset name:").execute()
-
-    # Load or generate schema for new linked dataset
-    schema = load_schema(new_dataset_name)
-    if not schema:
-        schema = generate_schema()
-        save_schema(new_dataset_name, schema)
-
-    # Ensure 'id' field
-    schema = ensure_id_field(schema)
-
-    new_data = []
 
     for parent_record in linked_records:
         linked_num = random.randint(min_count, max_count)
@@ -404,14 +414,14 @@ def generate_linked_dataset():
 
 def generate_dataset():
     data_set_name = inquirer.text(message="Enter data set name:").execute()
-    schema = load_schema(data_set_name)
+    schema = load_schema(data_set_name, True)
 
     if not schema:
-        schema = generate_schema()
-        save_schema(data_set_name, schema)
-
-    schema = ensure_id_field(schema)
-
+        fields = generate_fields()
+        save_schema(data_set_name, fields)
+        # Reload with correct structure
+        schema = load_schema(data_set_name)
+        
     num_records = int(inquirer.text(
         message="How many records to generate?").execute())
 
@@ -421,8 +431,8 @@ def generate_dataset():
     print(f"\nSaved {num_records} records to {data_set_name}.json")
 
 
-def generate_schema():
-    schema = {}
+def generate_fields():
+    fields = {}
     while True:
         add_field = inquirer.confirm(message="Add another field?").execute()
         if not add_field:
@@ -430,8 +440,9 @@ def generate_schema():
         name = inquirer.text(message="Enter field name:").execute()
         field_type = prompt_field_type()
         options = prompt_options(field_type)
-        schema[name] = {"type": field_type, "options": options}
-    return schema
+        fields[name] = {"type": field_type, "options": options}
+    fields = ensure_id_field(fields)
+    return fields
 
 
 if __name__ == "__main__":

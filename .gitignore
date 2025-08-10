@@ -6,3 +6,4 @@ ssl/
 .DS_Store
 *.json
 test-gen/
+output.md

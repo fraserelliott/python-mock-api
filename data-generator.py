@@ -9,6 +9,25 @@ from faker import Faker
 fake = Faker('en_gb')
 
 
+def generate_avatar(options: dict) -> str:
+    seed = generate_uuid(None)
+    size = options.get("size", 100)
+    return f"https://i.pravatar.cc/{size}?u={seed}"
+
+
+def generate_image(options: dict) -> str:
+    seed = generate_uuid(None)
+    width = options.get("width", 100)
+    height = options.get("height", 100)
+    return f"https://picsum.photos/seed/{seed}/{width}/{height}"
+
+
+def generate_dog_image(options: dict) -> str:
+    width = options.get("width", 100)
+    height = options.get("height", width)
+    return f"https://place.dog/{width}/{height}"
+
+
 def generate_street(options: dict) -> str:
     return fake.street_address()
 
@@ -225,6 +244,29 @@ GEN_FIELDS = {
         },
         "description": "A UTC datetime (ISO format) between two dates"
     },
+    "avatar": {
+        "func": generate_avatar,
+        "options": {
+            "size": {"type": int, "default": 100, "description": "The size of the square avatar link in pixels"}
+        },
+        "description": "An avatar link (pravatar)"
+    },
+    "image": {
+        "func": generate_image,
+        "options": {
+            "width": {"type": int, "default": 100, "description": "Width (pixels)"},
+            "height": {"type": int, "default": 100, "description": "Height (pixels)"},
+        },
+        "description": "An image link (picsum)"
+    },
+    "dog_image": {
+        "func": generate_dog_image,
+        "options": {
+            "width": {"type": int, "default": 100, "description": "Width (pixels)"},
+            "height": {"type": int, "default": 100, "description": "Height (pixels)"},
+        },
+        "description": "An image of a pet (loremflickr)"
+    },
 }
 
 
@@ -283,6 +325,57 @@ def generate_entry(schema: dict, idx: int) -> dict:
     return entry
 
 
+def generate_linked_dataset():
+    # Ask which dataset to link to
+    linked_dataset_name = inquirer.text(
+        message="Enter the linked dataset name:").execute()
+    linked_dataset_file = f"{linked_dataset_name}.json"
+
+    # Load linked dataset records
+    if not os.path.exists(linked_dataset_file):
+        print(f"Linked dataset '{linked_dataset_file}' not found!")
+        return
+
+    with open(linked_dataset_file) as f:
+        linked_records = json.load(f)
+
+    # Set foreign key field name (e.g. post_id)
+    foreign_key_field = f"{linked_dataset_name}_id"
+    print(f"Using foreign key field: '{foreign_key_field}'")
+
+    # Get how many linked records per linked entry
+    min_count = int(inquirer.text(
+        message="Minimum number of linked records per parent?").execute())
+    max_count = int(inquirer.text(
+        message="Maximum number of linked records per parent?").execute())
+
+    # Get the new dataset name
+    new_dataset_name = inquirer.text(
+        message="Enter the new linked dataset name (e.g. comments):").execute()
+
+    # Load or generate schema for new linked dataset
+    schema = load_schema(new_dataset_name)
+    if not schema:
+        schema = generate_schema()
+        save_schema(new_dataset_name, schema)
+
+    # Ensure 'id' field
+    schema = ensure_id_field(schema)
+
+    new_data = []
+
+    for parent_record in linked_records:
+        linked_num = random.randint(min_count, max_count)
+        parent_id = parent_record.get("id")
+        for _ in range(linked_num):
+            entry = generate_entry(schema, idx=0)
+            entry[foreign_key_field] = parent_id
+            new_data.append(entry)
+
+    save_generated_data(new_dataset_name, new_data)
+    print(f"\nSaved {len(new_data)} linked records to {new_dataset_name}.json")
+
+
 def generate_dataset():
     data_set_name = inquirer.text(message="Enter data set name:").execute()
     schema = load_schema(data_set_name)
@@ -316,4 +409,8 @@ def generate_schema():
 
 
 if __name__ == "__main__":
-    generate_dataset()
+    is_linked = inquirer.confirm(message="Generate a linked dataset?").execute()
+    if is_linked:
+        generate_linked_dataset()
+    else:
+        generate_dataset()

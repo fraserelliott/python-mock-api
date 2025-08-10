@@ -128,12 +128,15 @@ def generate_datetime_utc(options: dict) -> str:
     start_date = datetime(start_year, start_month, start_day)
     end_date = datetime(end_year, end_month, end_day)
 
+    # 50% chance of returning a blank string if nullable
+    if options.get("nullable", False) and random.random() < 0.5:
+        return ""
+
     # Compute total seconds range
     delta_seconds = int((end_date - start_date).total_seconds())
     random_seconds = random.randint(0, delta_seconds)
 
     random_datetime = start_date + timedelta(seconds=random_seconds)
-    # Return ISO 8601 UTC string with 'Z' suffix
     return random_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -267,6 +270,7 @@ GEN_FIELDS = {
             "end_day": {"type": int, "default": 31, "description": "End day"},
             "end_month": {"type": int, "default": 12, "description": "End month"},
             "end_year": {"type": int, "default": 2025, "description": "End year"},
+            "nullable": {"type": bool, "default": False, "description": "Whether half the data should be empty"},
         },
         "description": "A UTC datetime (ISO format) between two dates"
     },

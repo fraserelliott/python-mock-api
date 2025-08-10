@@ -9,6 +9,25 @@ from faker import Faker
 fake = Faker('en_gb')
 
 
+def generate_foreign_key(options: dict) -> str:
+    dataset_name = options.get("dataset")
+    if not dataset_name:
+        raise ValueError("foreign_key generator requires a 'dataset' option")
+
+    # Load dataset once and cache it for performance if needed
+    # For simplicity, load fresh each time here:
+    try:
+        with open(f"{dataset_name}.json") as f:
+            dataset = json.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Dataset file '{dataset_name}.json' not found")
+
+    # Pick a random record's id
+    if not dataset:
+        raise ValueError(f"Dataset '{dataset_name}' is empty")
+
+    return random.choice(dataset)["id"]
+
 def generate_avatar(options: dict) -> str:
     seed = generate_uuid(None)
     size = options.get("size", 100)
@@ -267,6 +286,13 @@ GEN_FIELDS = {
         },
         "description": "An image of a pet (loremflickr)"
     },
+    "foreign_key": {
+        "func": generate_foreign_key,
+        "options": {
+            "dataset": {"type": str, "default": "", "description": "The name of the dataset json file"}
+        },
+        "description": "The id field of a random entry in a specified dataset"
+    }
 }
 
 
@@ -328,7 +354,7 @@ def generate_entry(schema: dict, idx: int) -> dict:
 def generate_linked_dataset():
     # Ask which dataset to link to
     linked_dataset_name = inquirer.text(
-        message="Enter the linked dataset name:").execute()
+        message="Enter the parent dataset name for linking:").execute()
     linked_dataset_file = f"{linked_dataset_name}.json"
 
     # Load linked dataset records
@@ -351,7 +377,7 @@ def generate_linked_dataset():
 
     # Get the new dataset name
     new_dataset_name = inquirer.text(
-        message="Enter the new linked dataset name (e.g. comments):").execute()
+        message="Enter the new dataset name:").execute()
 
     # Load or generate schema for new linked dataset
     schema = load_schema(new_dataset_name)

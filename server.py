@@ -193,6 +193,40 @@ class JsonServer:
                     content={"message": "Successful post, no entries created"}
                 )
         self.app.post(endpoint)(handler)
+        
+    def add_auth_route(self, endpoint: str, data_set: str, middleware: list[str] = None, metadata: dict = None):
+        """
+        Adds a POST route to the FastAPI app for creating new entries in the specified dataset.
+
+        Args:
+            endpoint (str): The URL path for the POST endpoint.
+            data_set (str): The key of the dataset in self.data to which new entries will be added.
+            middleware (list[str]): List of middleware names to run before handling the request.
+            metadata (dict, optional): Options affecting entry creation, such as auto-generating UUID, timestamps.
+
+        Behavior:
+            - Returns accepted_token configured for auth_token middleware or error 500 if not configured.
+        """
+        metadata = metadata or {}
+        middleware = middleware or []
+        async def handler(request: Request):
+            cfg = self.middleware_config.get("auth_token")
+            if not cfg:
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": "Missing config for auth_token"}
+                )
+            token = cfg.get("accepted_token")
+            if not token:
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": "Missing config for accepted_token"}
+                )
+            return JSONResponse(
+                    status_code=200,
+                    content={"token": token}
+                )
+        self.app.post(endpoint)(handler)
 
     def add_delete_route(self, endpoint: str, data_set: str, middleware: list[str] = None, metadata: dict = None):
         """
@@ -425,7 +459,8 @@ class JsonServer:
                     "GET": self.add_get_route,
                     "POST": self.add_post_route,
                     "PUT": self.add_put_route,
-                    "DELETE": self.add_delete_route}
+                    "DELETE": self.add_delete_route,
+                    "AUTH": self.add_auth_route}
                 routefuncs[route.method](
                     route.endpoint, route.data_set, route.middleware, route.metadata)
                 self.ensure_dataset_loaded(route.data_set)

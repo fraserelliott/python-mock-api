@@ -5,6 +5,14 @@
 3. `cd frontend` or `cd backend`, depending on which you are working on
 4. Run `npm run setup`. This will install all dependencies and set up the Python virtual environment.
 5. Edit the `.env` file in the backend folder with your MySQL configuration.
+6. Set up mysql:
+```bash
+cd backend
+mysql -u root -p
+```
+```sql
+source schema.sql;
+```
 
 
 # How to run for testing
@@ -13,8 +21,8 @@ There are pre-made scripts to ensure the correct servers run and URLs are set fo
 Please do **not** change these; if anything isn't working or you're unsure, ask Fraser.
 
 **For Frontend:**
-1. Use `npm run dev:mock` while the backend is still in development.
-2. Use `npm run dev:backend` once you get the go-ahead.
+1. Use `npm run dev-mock` while the backend is still in development.
+2. Use `npm run dev-backend` once you get the go-ahead.
 
 **For Backend:**
 - Use `npm run dev`
